@@ -104,61 +104,61 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
 
 @router.post("/vacancy")  # _СОЗДАТЬ ВАКАНСИЮ_ POST
 async def create_vacancy(title: str = Form(...), info_cv: UploadFile = File(...), db: Session = Depends(get_db)):
-    extension = info_cv.filename.split('.')[-1].lower()
-    if extension not in ['pdf', 'docx', 'doc']:
-        raise HTTPException(status_code=400, detail="Invalid file format")
-    vacancy_dir = BASE_DATA_DIR / str(datetime.now().timestamp())
+    new_vacancy = Vacancy(title=title, filename="load")
+    db.add(new_vacancy)
+    db.commit()
+    db.refresh(new_vacancy)
+    vacancy_dir = BASE_DATA_DIR / str(new_vacancy.id)
     os.makedirs(vacancy_dir, exist_ok=True)
     filename = vacancy_dir / info_cv.filename
     with open(filename, "wb") as buffer:
         shutil.copyfileobj(info_cv.file, buffer)
-    new_vacancy = Vacancy(title=title, filename=str(filename))
-    db.add(new_vacancy)
+    new_vacancy.filename = str(filename)
     db.commit()
     db.refresh(new_vacancy)
+
     return {"message": "Vacancy created", "vacancy_id": new_vacancy.id}
 
 @router.post("/candidate")  # _ДОБАВИТЬ КАНДИДАТА_ POST
 async def add_candidate(
     vacancy_title: str = Form(...),
-    full_name: str = Form(...),  # Добавил ФИО, так как в объекте фронта есть fullName
-    resume: UploadFile = File(...),
+    resumes: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
+    added_candidates = []
     vacancy = db.query(Vacancy).filter(Vacancy.title == vacancy_title).first()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
-    extension = resume.filename.split('.')[-1].lower()
-    if extension not in ['pdf', 'docx', 'doc']:
-        raise HTTPException(status_code=400, detail="Invalid resume format")
-    cv_dir = BASE_DATA_DIR / str(vacancy.id) / "cv"
-    os.makedirs(cv_dir, exist_ok=True)
-    resume_path = cv_dir / resume.filename
-    with open(resume_path, "wb") as buffer:
-        shutil.copyfileobj(resume.file, buffer)
-    # Вызов Module1 для анализа
+    cvs_dir = BASE_DATA_DIR / str(vacancy.id) / "cvs"
+    os.makedirs(cvs_dir, exist_ok=True)
+    
+    for resume in resumes:
+        resume_path = cvs_dir / resume.filename
+        print(resume_path)
+        with open(resume_path, "wb") as buffer:
+            shutil.copyfileobj(resume.file, buffer)
+        # Вызов Module1 для анализа
     try:
-        result_dict = cv_validation(folder_cv_path=str(cv_dir), info_cv_path=vacancy.filename)
-        # Предполагаем, что result_dict[resume_path] имеет 'answer': bool, 'comment': str, 'name': str
-        analysis_result = result_dict.get(str(resume_path), {})
+        result_dict = cv_validation(folder_cv_path=str(cvs_dir), info_cv_path=vacancy.filename)
+    except Exception as e:
+        HTTPException(status_code=500, detail="AI analise error")
+    for link_to_cv, analysis_result in result_dict.items():
         resume_analysis = ResumeAnalysisStatus.suitable if analysis_result.get('answer', False) else ResumeAnalysisStatus.not_suitable
         ai_comments = analysis_result.get('comment')
-    except Exception as e:
-        resume_analysis = ResumeAnalysisStatus.not_suitable
-        ai_comments = str(e)
-    new_candidate = Candidate(
-        full_name=full_name or analysis_result.get('name', 'Unknown'),
-        vacancy_id=vacancy.id,
-        resume_filename=str(resume_path),
-        resume_size=resume_path.stat().st_size,
-        resume_analysis=resume_analysis,
-        ai_comments=ai_comments
-        # ai_report заполняется позже, в других модулях
-    )
-    db.add(new_candidate)
-    db.commit()
-    db.refresh(new_candidate)
-    return {"message": "Candidate added", "candidate_id": new_candidate.id}
+        new_candidate = Candidate(
+            full_name=analysis_result.get('name') if analysis_result.get('name') not in [None,'None',0,'0'] else Path(link_to_cv).name,
+            vacancy_id=vacancy.id,
+            resume_filename=str(link_to_cv),
+            resume_size=Path(link_to_cv).stat().st_size,
+            resume_analysis=resume_analysis,
+            ai_comments=ai_comments
+            # ai_report заполняется позже, в других модулях
+        )
+        db.add(new_candidate)
+        db.commit()
+        db.refresh(new_candidate)
+        added_candidates.append(new_candidate.id)
+    return {"message": "Candidates added", "candidates_id": added_candidates}
 
 @router.delete("/vacancy/{vacancy_id}")  # _УДАЛИТЬ ВАКАНСИЮ_ DEL (каскад)
 def delete_vacancy(vacancy_id: int, db: Session = Depends(get_db)):
