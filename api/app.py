@@ -4,7 +4,7 @@
 from fastapi import FastAPI, Request
 import json
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import upload, crud
+from api.routers import upload, crud, download
 
 app = FastAPI()
 
@@ -18,5 +18,6 @@ app.add_middleware(
 )
 
 # Подключаем роутер
-app.include_router(upload.router)
+# app.include_router(upload.router)
 app.include_router(crud.router)
+app.include_router(download.router)

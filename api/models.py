@@ -92,6 +92,8 @@ class UserLogin(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    userEmail: str
+    fullName: str
 
 # Для _ВАКАНСИИ_ GET (элемент)
 class VacancyResponse(BaseModel):

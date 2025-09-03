@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 import os
 import shutil
 from pathlib import Path
-from api.scripts.module1 import cv_validation  # Интеграция с Module1
+from api.scripts.module1 import cv_validation
+from api.scripts.convert_functions import convert_to_dict  # Интеграция с Module1
 from typing import List
 
 router = APIRouter(prefix="/crud", tags=["crud"])
@@ -61,7 +62,7 @@ def login_user(form_data: UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(data={"sub": user.email}, expires_delta=access_token_expires)
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": access_token, "token_type": "bearer", "userEmail": user.email, "fullName": user.fio}
 
 @router.get("/vacancies", response_model=List[VacancyResponse])  # _ВАКАНСИИ_ GET
 def get_vacancies(db: Session = Depends(get_db)):
@@ -92,7 +93,6 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
     if candidate.resume_analysis != ResumeAnalysisStatus.suitable:
         candidate.call_date = None
         candidate.call_link = None
-        candidate.ai_comments = None
         candidate.ai_report = None
     return CandidateDetailResponse(
         id=candidate.id, title=title, vacancy=vacancy.title if vacancy else None,
@@ -103,8 +103,8 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
     )
 
 @router.post("/vacancy")  # _СОЗДАТЬ ВАКАНСИЮ_ POST
-async def create_vacancy(title: str = Form(...), info_cv: UploadFile = File(...), db: Session = Depends(get_db)):
-    new_vacancy = Vacancy(title=title, filename="load")
+async def create_vacancy(info_cv: UploadFile = File(...), db: Session = Depends(get_db)):
+    new_vacancy = Vacancy(title="load", filename="load")
     db.add(new_vacancy)
     db.commit()
     db.refresh(new_vacancy)
@@ -113,6 +113,9 @@ async def create_vacancy(title: str = Form(...), info_cv: UploadFile = File(...)
     filename = vacancy_dir / info_cv.filename
     with open(filename, "wb") as buffer:
         shutil.copyfileobj(info_cv.file, buffer)
+
+    _, title = convert_to_dict(str(filename))
+    new_vacancy.title = str(title)
     new_vacancy.filename = str(filename)
     db.commit()
     db.refresh(new_vacancy)
@@ -121,12 +124,12 @@ async def create_vacancy(title: str = Form(...), info_cv: UploadFile = File(...)
 
 @router.post("/candidate")  # _ДОБАВИТЬ КАНДИДАТА_ POST
 async def add_candidate(
-    vacancy_title: str = Form(...),
+    vacancy_id: str = Form(...),
     resumes: List[UploadFile] = File(...),
     db: Session = Depends(get_db)
 ):
     added_candidates = []
-    vacancy = db.query(Vacancy).filter(Vacancy.title == vacancy_title).first()
+    vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
     cvs_dir = BASE_DATA_DIR / str(vacancy.id) / "cvs"
@@ -165,16 +168,33 @@ def delete_vacancy(vacancy_id: int, db: Session = Depends(get_db)):
     vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
+
+    # Удаляем запись из БД
     db.delete(vacancy)
     db.commit()
-    # Каскад удалит кандидатов автоматически
-    return {"message": "Vacancy deleted"}
+
+    # Удаляем папку с файлами вакансии (если существует)
+    vacancy_dir = BASE_DATA_DIR / str(vacancy_id)
+    if vacancy_dir.exists() and vacancy_dir.is_dir():
+        shutil.rmtree(vacancy_dir, ignore_errors=True)
+
+    return {"message": "Vacancy and files deleted"}
 
 @router.delete("/candidate/{candidate_id}")  # _УДАЛИТЬ КАНДИДАТА_ DEL
 def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
+
+    # Удаляем файл резюме кандидата
+    if candidate.resume_filename and os.path.exists(candidate.resume_filename):
+        try:
+            os.remove(candidate.resume_filename)
+        except Exception as e:
+            print(f"⚠️ Не удалось удалить файл резюме {candidate.resume_filename}: {e}")
+
+    # Удаляем запись из БД
     db.delete(candidate)
     db.commit()
-    return {"message": "Candidate deleted"}
+
+    return {"message": "Candidate and resume deleted"}

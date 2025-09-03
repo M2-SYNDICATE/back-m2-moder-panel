@@ -61,5 +61,6 @@ def convert_to_dict(file: str) -> dict:
 
         if key and value:   # <--- добавляем только если оба не пустые
             result[key] = value
-
-    return result
+        if "Название" in result:
+            vacancy_name = result["Название"]
+    return result, vacancy_name

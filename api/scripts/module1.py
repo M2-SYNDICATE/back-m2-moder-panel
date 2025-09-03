@@ -14,7 +14,7 @@ def cv_validation(folder_cv_path: str, info_cv_path: str) -> dict:
     Function for validating all cv hr loaded to folder_cv_path via info about vacancy
     :param folder_cv_path:  folder with all CV loaded for selected info_cv
     :param info_cv_path:  path for vacancy describe
-    :return: result dict {link_to_cv:{answer:bool, comment:str, name:str}}, additionally info_dict for module 2
+    :return: result dict {link_to_cv:{answer:bool, comment:str}}, additionally info_dict for module 2
     """
     if not os.path.exists(folder_cv_path):
         raise FileNotFoundError(f"Папка с CV не найдена: {folder_cv_path}")
@@ -37,7 +37,7 @@ def cv_validation(folder_cv_path: str, info_cv_path: str) -> dict:
     except Exception as e:
         raise Exception(f"Ошибка при обработке файлов в папке {folder_cv_path}: {e}")
     try:
-        info_dict = convert_functions.convert_to_dict(file=info_cv_path)
+        info_dict,_ = convert_functions.convert_to_dict(file=info_cv_path)
     except Exception as e:
         raise Exception(f"Ошибка при обработке файла с описанием вакансии {info_cv_path}: {e}")
 
@@ -47,24 +47,24 @@ def cv_validation(folder_cv_path: str, info_cv_path: str) -> dict:
         try:
             info_cv = convert_functions.convert_to_text(file_list=file_paths, file_num=i)
             response = client.chat.completions.parse(
-                model="openai/gpt-oss-20b:free",
+                model="qwen/qwen3-30b-a3b:free", #qwen/qwen3-30b-a3b:free  openai/gpt-oss-20b:free deepseek/deepseek-chat-v3.1:free openai/gpt-oss-120b:free
                 messages=prompt.prompt_info_fill(info=info_dict, cv_text=info_cv),
-                response_format=pydantic_class.JobPosting,
-                temperature=0.2,
+                response_format=pydantic_class.CvValidationResult, #JobPosting
+                temperature=0.25,
                 top_p=0.95
                 )
-
+            #print(response)
             result = response.choices[0].message.parsed
             result_dict[file] = {
                 "answer": result.answer,
-                "comment": result.comment,
-                "name": result.name
+                "comment": result.analysis.comment,
+                "name": result.analysis.name,
+                "experience": result.analysis.experience
                 }
             print(f"Обработан файл: {file}")
-            print(result)
+            print(result_dict)
             time.sleep(1)
         except Exception as e:
             print(f"Ошибка при обработке файла {file}: {e}")
             result_dict[file] = {"error": str(e)}
     return result_dict
-
