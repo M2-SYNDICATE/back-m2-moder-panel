@@ -132,6 +132,10 @@ class AddCandidateRequest(BaseModel):
     vacancy_title: str  # Название вакансии (для поиска vacancy_id)
     # Файлы резюме через UploadFile в эндпоинте
 
+class CandidateInvite(BaseModel):
+    candidate_id: int
+    email: str
+
 
 
 

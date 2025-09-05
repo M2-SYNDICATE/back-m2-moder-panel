@@ -89,13 +89,13 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
         "size": candidate.resume_size,
         "uploadDate": resume_upload_date
     }
-    title = f"{candidate.full_name} / {vacancy.title}" if vacancy else candidate.full_name
+    
     if candidate.resume_analysis != ResumeAnalysisStatus.suitable:
         candidate.call_date = None
         candidate.call_link = None
         candidate.ai_report = None
     return CandidateDetailResponse(
-        id=candidate.id, title=title, vacancy=vacancy.title if vacancy else None,
+        id=candidate.id, title=candidate.full_name, vacancy=vacancy.title if vacancy else None,
         callDate=candidate.call_date, callLink=candidate.call_link,
         comments=candidate.ai_comments, resume=resume_dict,
         resumeAnalysis=candidate.resume_analysis, callStatus=candidate.call_status,
