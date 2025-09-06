@@ -136,6 +136,8 @@ class CandidateInvite(BaseModel):
     candidate_id: int
     email: str
 
+class RoomName(BaseModel):
+    room: str
 
 
 
