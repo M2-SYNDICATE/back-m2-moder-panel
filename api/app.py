@@ -4,7 +4,7 @@
 from fastapi import FastAPI, Request
 import json
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import crud, download, schedule, scenario
+from api.routers import crud, download, schedule, scenario, interview_report
 
 app = FastAPI()
 
@@ -23,3 +23,4 @@ app.include_router(crud.router)
 app.include_router(download.router)
 app.include_router(schedule.router)
 app.include_router(scenario.router)
+app.include_router(interview_report.router)
