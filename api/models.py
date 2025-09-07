@@ -109,6 +109,7 @@ class CandidateListResponse(BaseModel):
     resumeAnalysis: ResumeAnalysisStatus
     callStatus: CallStatus
     callDate: Optional[datetime]
+    callLink: Optional[str]
 
 # Для _КАНДИДАТ_ GET
 class CandidateDetailResponse(BaseModel):

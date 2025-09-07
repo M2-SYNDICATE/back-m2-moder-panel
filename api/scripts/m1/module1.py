@@ -1,7 +1,7 @@
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
-from api.scripts.convert_functions import pydantic_class, prompt, convert_functions
+from api.scripts.m1.convert_functions import pydantic_class, prompt, convert_functions
 import time
 
 load_dotenv()

@@ -11,8 +11,8 @@ from datetime import datetime, timedelta, timezone
 import os
 import shutil
 from pathlib import Path
-from api.scripts.module1 import cv_validation
-from api.scripts.convert_functions import convert_to_dict  # Интеграция с Module1
+from api.scripts.m1.module1 import cv_validation
+from api.scripts.m1.convert_functions import convert_to_dict  # Интеграция с Module1
 from typing import List
 
 router = APIRouter(prefix="/crud", tags=["crud"])
@@ -74,7 +74,7 @@ def get_candidates(db: Session = Depends(get_db)):
     candidates = db.query(Candidate).all()
     return [CandidateListResponse(
         id=c.id, fullName=c.full_name, vacancyId=c.vacancy_id,
-        resumeAnalysis=c.resume_analysis, callStatus=c.call_status, callDate=c.call_date
+        resumeAnalysis=c.resume_analysis, callStatus=c.call_status, callDate=c.call_date, callLink=c.call_link
     ) for c in candidates]
 
 @router.get("/candidate/{candidate_id}", response_model=CandidateDetailResponse)  # _КАНДИДАТ_ GET

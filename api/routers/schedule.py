@@ -183,6 +183,7 @@ def confirm_datetime(
     dt_utc = dt_naive.replace(tzinfo=timezone.utc)
 
     candidate.call_date = dt_utc
+    candidate.call_link = "https://www.pornhub.com/"
     scheduled_status = get_scheduled_status()
     if scheduled_status is None:
         # Если в enum нет нужного значения — дадим понятную ошибку (или выставим строку, если поле строковое)
