@@ -21,10 +21,10 @@ ALGORITHM = "HS256"
 BASE_APP_URL = os.getenv("BASE_APP_URL", "http://localhost:8000")
 
 # SMTP настройки (задай в env)
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.example.com")
+SMTP_HOST = os.getenv("SMTP_HOST", "smtp.mail.ru")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "no-reply@example.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "password")
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASS = os.getenv("SMTP_PASS")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
 
 
@@ -65,8 +65,7 @@ def get_scheduled_status():
     Если у тебя другое имя (например, 'appointed' или 'scheduled_interview'),
     поменяй здесь один раз — и весь код ниже подстроится.
     """
-    # Наиболее вероятное имя:
-    return getattr(CallStatus, "scheduled", None) or getattr(CallStatus, "appointed")
+    return CallStatus.planned
 
 
 @router.post("/invite")
@@ -90,7 +89,7 @@ def send_schedule_invite(
 
     token = make_token(data.candidate_id)
     # Вариант 1: встроенная HTML-форма на бэке
-    choose_url = f"{BASE_APP_URL}/schedule/choose?token={token}"
+    choose_url = f"{BASE_APP_URL}/crud/schedule/choose?token={token}"
     # (Альтернатива — отправлять на фронтовую страницу бронирования, если она есть)
 
     subject = "Выбор даты собеседования"
@@ -139,7 +138,7 @@ def choose_datetime(token: str):
     <body>
       <div class="card">
         <h2>Назначить собеседование</h2>
-        <form method="post" action="/schedule/confirm">
+        <form method="post" action="/crud/schedule/confirm">
           <input type="hidden" name="token" value="{token}"/>
           <label for="dt">Выберите дату и время</label>
           <input id="dt" type="datetime-local" name="datetime_local" required />

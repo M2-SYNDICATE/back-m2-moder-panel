@@ -47,19 +47,19 @@ def cv_validation(folder_cv_path: str, info_cv_path: str) -> dict:
         try:
             info_cv = convert_functions.convert_to_text(file_list=file_paths, file_num=i)
             response = client.chat.completions.parse(
-                model="qwen/qwen3-30b-a3b:free", #qwen/qwen3-30b-a3b:free  openai/gpt-oss-20b:free deepseek/deepseek-chat-v3.1:free openai/gpt-oss-120b:free
+                model="deepseek/deepseek-r1-0528:free", #qwen/qwen3-30b-a3b:free  openai/gpt-oss-20b:free deepseek/deepseek-chat-v3.1:free openai/gpt-oss-120b:free deepseek/deepseek-chat-v3.1:free
                 messages=prompt.prompt_info_fill(info=info_dict, cv_text=info_cv),
-                response_format=pydantic_class.CvValidationResult, #JobPosting
-                temperature=0.25,
+                response_format=pydantic_class.Analysis, #CvValidationResult, #JobPosting
+                temperature=0.1,
                 top_p=0.95
                 )
-            #print(response)
             result = response.choices[0].message.parsed
             result_dict[file] = {
-                "answer": result.answer,
-                "comment": result.analysis.comment,
-                "name": result.analysis.name,
-                "experience": result.analysis.experience
+                "comment": result.comment,
+                "name": result.name,
+                "experience": result.experience,
+                "contact_data": result.contact_data,
+                "answer": result.answer
                 }
             print(f"Обработан файл: {file}")
             print(result_dict)

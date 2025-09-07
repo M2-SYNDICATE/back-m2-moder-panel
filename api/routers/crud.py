@@ -99,7 +99,7 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
         callDate=candidate.call_date, callLink=candidate.call_link,
         comments=candidate.ai_comments, resume=resume_dict,
         resumeAnalysis=candidate.resume_analysis, callStatus=candidate.call_status,
-        createdAt=candidate.created_at, ai_report=candidate.ai_report
+        createdAt=candidate.created_at, ai_report=candidate.ai_report, email=candidate.email
     )
 
 @router.post("/vacancy")  # _СОЗДАТЬ ВАКАНСИЮ_ POST
