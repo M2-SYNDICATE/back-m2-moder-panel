@@ -124,7 +124,7 @@ class CandidateDetailResponse(BaseModel):
     callStatus: CallStatus
     createdAt: datetime
     ai_report: Optional[str]  # Отчет от ИИ
-    email: Optional[str]
+    phone: Optional[str]
 
 # Для _СОЗДАТЬ ВАКАНСИЮ_ POST
 # (Файл загружается отдельно через UploadFile)

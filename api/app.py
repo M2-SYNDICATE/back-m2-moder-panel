@@ -25,6 +25,8 @@ app.add_middleware(
 # Публичные эндпоинты (без токена)
 PUBLIC_PATHS = {
     "/crud/login",
+    "/scenario/get_scenario",
+    "/interview_report",
     "/docs",
     "/openapi.json",
 }
@@ -33,8 +35,8 @@ load_dotenv()
 # Сервисный токен и список эндпоинтов, куда он дает доступ
 MY_CUSTOM_SERVICE_TOKEN = os.getenv("MY_CUSTOM_SERVICE_TOKEN")
 SERVICE_TOKEN_PATHS = {
-    "/scenario/get_scenario",
-    "/interview_report"
+    
+    
 }
 
 def _strip_bearer(auth_header: str | None):

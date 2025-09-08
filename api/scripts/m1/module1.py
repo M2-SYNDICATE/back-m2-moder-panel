@@ -4,10 +4,38 @@ import os
 from api.scripts.m1.convert_functions import pydantic_class, prompt, convert_functions
 import time
 
+import json
+from pathlib import Path
+
 load_dotenv()
 api_key = os.getenv("OPENROUTER_API_KEY")
 if not api_key:
     raise ValueError("Не найден API ключ OPENROUTER_API_KEY")
+
+
+def save_m1_result_json(result_dict: dict, out_dir: str, vacancy_id: int | str, filename: str | None = None) -> Path:
+    """
+    Сохраняет полный результат Модуля 1 (в т.ч. experience) в JSON.
+    Возвращает путь к файлу.
+    """
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    name = filename or f"m1_result_{vacancy_id}.json"
+    out_path = out / name
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(result_dict, f, ensure_ascii=False, indent=2)
+    return out_path
+
+
+# def run_module1_and_dump_json(folder_cv_path: str, info_cv_path: str, vacancy_id: int | str, out_dir: str = "api/data/m1") -> Path:
+#     """
+#     Выполняет cv_validation, сохраняет полный результат в JSON для Модуля 2.
+#     Возвращает путь к JSON.
+#     """
+#     result_dict = cv_validation(folder_cv_path=folder_cv_path, info_cv_path=info_cv_path)
+#     return save_m1_result_json(result_dict=result_dict, out_dir=out_dir, vacancy_id=vacancy_id)
+
+
 
 def cv_validation(folder_cv_path: str, info_cv_path: str) -> dict:
     """

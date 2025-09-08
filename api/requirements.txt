@@ -8,3 +8,4 @@ aspose-words
 openai
 python-dotenv
 pydantic[email]
+translitua

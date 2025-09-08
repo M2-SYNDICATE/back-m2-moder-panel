@@ -1,60 +1,61 @@
 from fastapi import APIRouter
 from api.models import RoomName
+from pathlib import Path
+import json
+from typing import Optional, Any
 
 
-scenario_json={"ddddd": {"general": {
-        "questions": [
-            {
-                "question": "Расскажите, пожалуйста, о себе и о том, как вы пришли к интересу в работе с серверным оборудованием и ЦОДами?",
-                "example_answer": "Кандидат может описать свой путь от обучения в техническом колледже до первых практических задач в лаборатории, упомянуть курсы по сетевому администрированию и первые проекты по монтажу оборудования."
-                },
-            {
-                "question": "Какие основные принципы работы серверного оборудования x86 вы считаете наиболее важными для ежедневной эксплуатации?",
-                "example_answer": "Кандидат может упомянуть BIOS/UEFI, BMC, RAID, управление питанием, мониторинг температур и вентиляторов, а также важность резервного копирования и обновления микропрограмм."
-                },
-            ]
-        },
-    "professional": {
-        "questions": [
-            {
-                "question": "Опишите процесс подключения серверного оборудования к сети LAN и SAN. Какие протоколы и настройки обычно применяются?",
-                "example_answer": "Кандидат может упомянуть VLAN, trunking, QoS, настройку SCSI‑SAS, LUN‑mapping, а также конфигурацию IP‑адресов и резервных каналов."
-                },
-            ]
-        },
-    "experience": {
-        "questions": [
-            {
-                "question": "Сколько лет вы работали с серверным оборудованием x86 и какие модели/марки использовали?",
-                "example_answer": "Кандидат может указать 2–3 года, перечислить Dell PowerEdge, HPE ProLiant, Lenovo ThinkSystem и т.д."
-                }
-            ]
-        },
-    "situational": {
-        "questions": [
-            {
-                "question": "Представьте, что в центре обработки данных внезапно отключился один из серверных racks. Как вы будете действовать, чтобы минимизировать влияние на бизнес?",
-                "example_answer": "Кандидат может описать проверку резервных источников питания, переключение на резервные узлы, уведомление команды, проверку журналов и планирование восстановления."
-                },
-            ]
-        },
-    "growth": {
-        "questions": [
-            {
-                "question": "Какие навыки вы планируете развивать в ближайшие 12 месяцев, чтобы стать более ценным специалистом в ЦОДе?",
-                "example_answer": "Кандидат может упомянуть сертификации (Cisco CCNA, Red Hat RHCSA, CompTIA Server+), изучение новых технологий (NVMe‑oF, 5G, edge‑computing) и улучшение навыков автоматизации."
-                },
-            ]
-        }
-    }
-
-}
 
 
 router = APIRouter(prefix="/scenario", tags=["scenario"])
 
+SCENARIO_DIR = Path(__file__).parent.parent / "data" / "scenario"
+
+def _parse_ids_from_room(room_name: str) -> Optional[tuple[str, str]]:
+    """
+    Ожидается формат: 'prefix-<candidate_id>-<vacancy_id>'.
+    Префикс может содержать дефисы. Берём две последние части.
+    """
+    if not room_name:
+        return None
+    parts = room_name.split("-")
+    if len(parts) < 3:
+        return None
+    candidate_id, vacancy_id = parts[-2], parts[-1]
+    if not candidate_id or not vacancy_id:
+        return None
+    return candidate_id, vacancy_id
+
+
+def _load_scenario(candidate_id: str, vacancy_id: str) -> Optional[Any]:
+    """
+    Читает файл <candidate_id>_<vacancy_id>.json из SCENARIO_DIR.
+    Игнорирует верхний ключ и возвращает его значение.
+    """
+    file_path = SCENARIO_DIR / f"{candidate_id}_{vacancy_id}.json"
+    if not file_path.exists() or not file_path.is_file():
+        return None
+
+    try:
+        with file_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    # В ваших файлах верхний уровень — dict { "<какой-то ключ>": <нужный объект> }
+    if isinstance(data, dict) and data:
+        # Берём ПЕРВОЕ значение и игнорируем ключ, как и требуется
+        return next(iter(data.values()))
+    # На всякий случай, если структура иная — вернём как есть
+    return data
+
+
 @router.post("/get_scenario")
 def get_scenario(room: RoomName):
-    if scenario_json.get(room.room[-5:]):
-        return {"scenario": scenario_json.get(room.room[-5:])}
-    return {"scenario": None}
+    ids = _parse_ids_from_room(room.room)
+    if not ids:
+        return {"scenario": None}
+
+    candidate_id, vacancy_id = ids
+    scenario = _load_scenario(candidate_id, vacancy_id)
+    return {"scenario": scenario if scenario is not None else None}
