@@ -14,22 +14,45 @@ from pathlib import Path
 from api.scripts.m1.module1 import cv_validation
 from api.scripts.m1.convert_functions import convert_to_dict  # Интеграция с Module1
 from api.scripts.m2.module2 import generate_and_save_scenario
-from typing import List
+from typing import List, Dict, Any
 import json
 import tempfile
 import string
 import secrets
 import re
+import asyncio
 
 router = APIRouter(prefix="/crud", tags=["crud"])
 
 # Настройки для паролей и JWT
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-SECRET_KEY = "your_secret_key"  # Замените на реальный секрет
+SECRET_KEY = "sdfghjkl"  # Замените на реальный секрет
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 999
 
 # ---------- helpers (prefix / room / phone) ----------
+
+def _delete_file_silent(p: Path) -> None:
+    try:
+        if p.exists() and p.is_file():
+            p.unlink()
+    except Exception as e:
+        print(f"⚠️ Не удалось удалить файл '{p}': {e}")
+
+def _delete_scenarios_for_vacancy(vacancy_id: int) -> int:
+    """Удаляет все сценарии для вакансии: *_<vacancy_id>.json"""
+    count = 0
+    for p in SCENARIO_DIR.glob(f"*_{vacancy_id}.json"):
+        _delete_file_silent(p)
+        count += 1
+    return count
+
+def _delete_scenarios_for_candidate(candidate_id: int, vacancy_id: int) -> int:
+    """Удаляет сценарий кандидата: <candidate_id>_<vacancy_id>.json"""
+    p = SCENARIO_DIR / f"{candidate_id}_{vacancy_id}.json"
+    existed = p.exists()
+    _delete_file_silent(p)
+    return int(existed)
 
 def _random_prefix(length: int = 6) -> str:
     alphabet = string.ascii_lowercase + string.digits
@@ -182,7 +205,7 @@ async def create_vacancy(info_cv: UploadFile = File(...), db: Session = Depends(
 
     return {"message": "Vacancy created", "vacancy_id": new_vacancy.id}
 
-@router.post("/candidate")  # _ДОБАВИТЬ КАНДИДАТА_ POST
+@router.post("/candidate")
 async def add_candidate(
     vacancy_id: str = Form(...),
     resumes: List[UploadFile] = File(...),
@@ -191,50 +214,48 @@ async def add_candidate(
     added_candidates: List[int] = []
     generated_scenarios: List[str] = []
 
-    # 0) Проверяем вакансию
+    # 0) Вакансия
     vacancy = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # 1) Директории: cvs (вход), scenario (выход мод.2)
-    cvs_dir = BASE_DATA_DIR / str(vacancy.id) / "cvs"        # uploads/<vacancy_id>/cvs
-    scenario_dir = SCENARIO_DIR                              # api/data/scenario
-
+    # 1) Директории
+    cvs_dir = BASE_DATA_DIR / str(vacancy.id) / "cvs"
+    scenario_dir = SCENARIO_DIR
     os.makedirs(cvs_dir, exist_ok=True)
     os.makedirs(scenario_dir, exist_ok=True)
 
-    # 2) Сохраняем загруженные резюме
+    # 2) Сохраняем резюме (IO — можно оставить синхронно)
     for resume in resumes:
-        resume_path = cvs_dir / resume.filename
-        with open(resume_path, "wb") as buffer:
+        with open(cvs_dir / resume.filename, "wb") as buffer:
             shutil.copyfileobj(resume.file, buffer)
 
-    # 3) Запускаем Модуль 1 (без сохранения общего JSON на диск)
+    # 3) Запускаем Модуль 1 в пуле потоков
     try:
-        result_dict = cv_validation(
-            folder_cv_path=str(cvs_dir),          # папка с CV
-            info_cv_path=str(vacancy.filename),   # путь к описанию вакансии
+        result_dict = await asyncio.to_thread(
+            cv_validation,
+            folder_cv_path=str(cvs_dir),
+            info_cv_path=str(vacancy.filename),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI analyse error: {e}")
 
-    # >>> заранее вычислим префикс для комнаты на базе вакансии
     room_prefix = _make_room_prefix(vacancy)
 
-    # 4) Создаём кандидатов в БД и для подходящих запускаем Модуль 2.
+    # Будем копить задачи генерации сценариев (без ORM внутри)
+    scenario_tasks = []
+
+    # 4) Создаём кандидатов в БД, для suitable — сразу сохраняем ссылку/дату/телефон,
+    #    а генерацию сценария отправляем в фоновый поток.
     for link_to_cv, analysis_result in result_dict.items():
-        data = analysis_result if isinstance(analysis_result, dict) else {}
+        data: Dict[str, Any] = analysis_result if isinstance(analysis_result, dict) else {}
         is_suitable = bool(data.get("answer", False))
         ai_comments = data.get("comment")
 
         raw_name = data.get("name")
-        full_name = (
-            raw_name
-            if raw_name not in [None, "None", 0, "0"]
-            else Path(link_to_cv).name
-        )
+        full_name = raw_name if raw_name not in [None, "None", 0, "0"] else Path(link_to_cv).name
 
-        # Вставка кандидата в БД
+        # Создание кандидата (в основном потоке)
         try:
             new_candidate = Candidate(
                 full_name=full_name,
@@ -253,20 +274,13 @@ async def add_candidate(
             print(f"DB error for CV '{link_to_cv}': {e}")
             continue
 
-        # >>> Генерация ссылки/телефона/даты и сохранение у КАНДИДАТА
-        #    Логику обычно имеет смысл делать только для подходящих кандидатов,
-        #    но если хотите — можно убрать проверку is_suitable.
         if is_suitable:
+            # 4a) сразу записываем call_link / email / call_date (ORM тут!)
             try:
                 room_name = _build_room_name(new_candidate.id, vacancy.id, room_prefix)
-                call_link = f"https://m2-live.ru/room/{room_name}"
-                fake_phone = _fake_phone_ru()
-                call_date = datetime.now()
-
-                # сохраняем в поля модели
-                new_candidate.call_link = call_link
-                new_candidate.email = fake_phone       # по задаче: телефон сохраняем в email
-                new_candidate.call_date = call_date    # строка "YYYY-MM-DD HH:MM:SS.ffffff"
+                new_candidate.call_link = f"https://m2-live.ru/room/{room_name}"
+                new_candidate.email = _fake_phone_ru()   # телефон по ТЗ кладём в email
+                new_candidate.call_date = datetime.now()  # DateTime в БД
 
                 db.add(new_candidate)
                 db.commit()
@@ -275,28 +289,69 @@ async def add_candidate(
                 db.rollback()
                 print(f"Error saving call link/phone/date for candidate {new_candidate.id}: {e}")
 
+            # 4b) подготовим payload для сценария и запланируем to_thread
             scenario_filename = f"{new_candidate.id}_{vacancy.id}.json"
-            try:
-                single_payload = {link_to_cv: data}
-                with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as tmp:
-                    json.dump(single_payload, tmp, ensure_ascii=False, indent=2)
-                    tmp_json_path = tmp.name
 
-                generate_and_save_scenario(
+            # каждый поток сам сделает свой temp json, чтобы не делить ресурсы
+            async def _scenario_job(
+                info_cv_path: str,
+                data_obj: Dict[str, Any],
+                link: str,
+                out_dir: str,
+                scen_filename: str,
+            ):
+                # всё внутри — в отдельном потоке, никаких обращений к ORM!
+                def _work():
+                    # временный JSON на одного кандидата
+                    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as tmp:
+                        json.dump({link: data_obj}, tmp, ensure_ascii=False, indent=2)
+                        tmp_json_path = tmp.name
+                    try:
+                        generate_and_save_scenario(
+                            info_cv_path=info_cv_path,
+                            json_path=tmp_json_path,
+                            out_dir=out_dir,
+                            scenario_filename=scen_filename,
+                        )
+                        return scen_filename, None
+                    except Exception as ex:
+                        return None, ex
+                    finally:
+                        try:
+                            os.remove(tmp_json_path)
+                        except Exception:
+                            pass
+
+                return await asyncio.to_thread(_work)
+
+            scenario_tasks.append(
+                _scenario_job(
                     info_cv_path=str(vacancy.filename),
-                    json_path=str(tmp_json_path),
+                    data_obj=data,
+                    link=link_to_cv,
                     out_dir=str(scenario_dir),
-                    scenario_filename=scenario_filename,
+                    scen_filename=scenario_filename,
                 )
-                generated_scenarios.append(scenario_filename)
-            except Exception as e:
-                print(f"Module2 error for candidate {new_candidate.id}: {e}")
+            )
+
+    # 5) Дожидаемся генерации всех сценариев (параллельно в потоках)
+    if scenario_tasks:
+        results = await asyncio.gather(*scenario_tasks, return_exceptions=True)
+        for res in results:
+            if isinstance(res, Exception):
+                print(f"Scenario task raised: {res}")
+                continue
+            scen_filename, err = res
+            if err:
+                print(f"Scenario generation error: {err}")
+            elif scen_filename:
+                generated_scenarios.append(scen_filename)
 
     return {
         "message": "Candidates added",
         "candidates_id": added_candidates,
         "scenarios_saved": generated_scenarios,
-        "scenario_dir": str(scenario_dir),
+        "scenario_dir": str(SCENARIO_DIR),
     }
 
 @router.delete("/vacancy/{vacancy_id}")  # _УДАЛИТЬ ВАКАНСИЮ_ DEL (каскад)
@@ -305,16 +360,20 @@ def delete_vacancy(vacancy_id: int, db: Session = Depends(get_db)):
     if not vacancy:
         raise HTTPException(status_code=404, detail="Vacancy not found")
 
-    # Удаляем запись из БД
+    # 1) Удаляем запись из БД (каскад на кандидатов — согласно вашей модели/ФК)
     db.delete(vacancy)
     db.commit()
 
-    # Удаляем папку с файлами вакансии (если существует)
+    # 2) Удаляем папку с файлами вакансии (uploads/<vacancy_id>)
     vacancy_dir = BASE_DATA_DIR / str(vacancy_id)
     if vacancy_dir.exists() and vacancy_dir.is_dir():
         shutil.rmtree(vacancy_dir, ignore_errors=True)
 
-    return {"message": "Vacancy and files deleted"}
+    # 3) Удаляем все сценарии, связанные с вакансией
+    _delete_scenarios_for_vacancy(vacancy_id)
+
+    return {"message": "Vacancy, files and scenarios deleted"}
+
 
 @router.delete("/candidate/{candidate_id}")  # _УДАЛИТЬ КАНДИДАТА_ DEL
 def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
@@ -322,15 +381,23 @@ def delete_candidate(candidate_id: int, db: Session = Depends(get_db)):
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    # Удаляем файл резюме кандидата
+    # Сохраняем vacancy_id до удаления записи — нужно для имени сценария
+    vacancy_id = int(candidate.vacancy_id) if candidate.vacancy_id is not None else None
+
+    # 1) Удаляем файл резюме кандидата
     if candidate.resume_filename and os.path.exists(candidate.resume_filename):
         try:
             os.remove(candidate.resume_filename)
         except Exception as e:
             print(f"⚠️ Не удалось удалить файл резюме {candidate.resume_filename}: {e}")
 
-    # Удаляем запись из БД
+    # 2) Удаляем сценарий кандидата (если знаем vacancy_id)
+    scenarios_deleted = 0
+    if vacancy_id is not None:
+        _delete_scenarios_for_candidate(candidate_id, vacancy_id)
+
+    # 3) Удаляем запись из БД
     db.delete(candidate)
     db.commit()
 
-    return {"message": "Candidate and resume deleted"}
+    return {"message": "Candidate, resume and scenario deleted"}
