@@ -12,7 +12,7 @@ if not api_key:
 def cv_validation(folder_cv_path: str, info_cv_path: str) -> dict:
     """
     Function for validating all cv hr loaded to folder_cv_path via info about vacancy
-    :param folder_cv_path:  folder with all CV loaded for selected info_cv
+    :param folder_cv_path:  folder with all CV loaded for selected info_cvm
     :param info_cv_path:  path for vacancy describe
     :return: result dict {link_to_cv:{answer:bool, comment:str}}, additionally info_dict for module 2
     """
