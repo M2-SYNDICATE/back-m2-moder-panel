@@ -160,10 +160,9 @@ def get_interview_report(room_name: str, report: dict, db: Session = Depends(get
     # подгружаем сценарий
     scenario_payload = _load_scenario(candidate_id_str, vacancy_id_str)
     if scenario_payload is None:
-        # Не критично — сохраним исходный отчёт как есть
-        merged_report = report
+        raise HTTPException(status_code=400, detail="Invalid scenario (Not found).")
     else:
-        merged_report = merge_report_with_questions(report, scenario_payload)
+        merged_report = merge_report_with_questions(report["report"], scenario_payload)
 
     # пишем в БД
     try:
