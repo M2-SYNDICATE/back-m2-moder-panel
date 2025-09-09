@@ -6,15 +6,27 @@ import json
 import re
 from api.scripts.report_analize import analyze_interview_data
 from rich import print
-
+import concurrent.futures
 from api.db_models import Candidate, Vacancy, get_db
 
 router = APIRouter(tags=["report"])
 
 SCENARIO_DIR = Path(__file__).parent.parent / "data" / "scenario"
-
+TIMEOUT_SECONDS = 180  # 3 минуты
+MAX_RETRIES = 3
 
 # ---------- helpers ----------
+
+def _call_with_timeout(func, *args, timeout: int = TIMEOUT_SECONDS):
+    """Вызывает sync-функцию с таймаутом через отдельный поток."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError as e:
+            # Попробуем отменить, чтобы не держать поток (если ещё возможно)
+            future.cancel()
+            raise e
 
 def _parse_ids_from_room(room_name: str) -> Optional[Tuple[str, str]]:
     """
@@ -62,14 +74,40 @@ def get_interview_report(room_name: str, report: dict, db: Session = Depends(get
         raise HTTPException(status_code=400, detail="Invalid room_name format. Expected 'prefix-<candidate>-<vacancy>'.")
 
     candidate_id_str, vacancy_id_str = ids
-    vacancy_title = db.query(Vacancy).filter(Vacancy.id == int(vacancy_id_str)).first()
+    vacancy = db.query(Vacancy).filter(Vacancy.id == int(vacancy_id_str)).first()
+
     # подгружаем сценарий
     scenario_payload = _load_scenario(candidate_id_str, vacancy_id_str)
     if scenario_payload is None:
         raise HTTPException(status_code=400, detail="Invalid scenario (Not found).")
-    else:
-        merged_report = analyze_interview_data(report, scenario_payload, vacancy_title.title)
-        print(merged_report)
+
+    # анализ с таймаутом и автоперезапуском при зависании
+    attempts = 0
+    last_error = None
+    while attempts <= MAX_RETRIES:
+        try:
+            merged_report = _call_with_timeout(
+                analyze_interview_data,
+                report,
+                scenario_payload,
+                vacancy.title if vacancy else None,
+                timeout=TIMEOUT_SECONDS,
+            )
+            break  # успех
+        except concurrent.futures.TimeoutError:
+            attempts += 1
+            print("[yellow bold]analyze_interview_data timed out (attempt %d/%d)", attempts, MAX_RETRIES + 1)
+            last_error = "Timeout"
+            if attempts > MAX_RETRIES:
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"analyze_interview_data timed out after {TIMEOUT_SECONDS//60} minutes (retried {MAX_RETRIES} time(s)).",
+                )
+        except Exception as e:
+            # Любая другая ошибка — сразу 500
+            print("[red bold on white]analyze_interview_data failed: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to analyze interview data")
+
     # пишем в БД
     try:
         candidate_id = int(candidate_id_str)
@@ -79,7 +117,7 @@ def get_interview_report(room_name: str, report: dict, db: Session = Depends(get
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-
+    print(merged_report)
     candidate.ai_report = json.dumps(merged_report, ensure_ascii=False)
     db.add(candidate)
     db.commit()
