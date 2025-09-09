@@ -1,10 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from api.models import RoomName
 from pathlib import Path
 import json
 from typing import Optional, Any
-
-
+from api.db_models import Vacancy, get_db
+from sqlalchemy.orm import Session
 
 
 router = APIRouter(prefix="/scenario", tags=["scenario"])
@@ -51,11 +51,12 @@ def _load_scenario(candidate_id: str, vacancy_id: str) -> Optional[Any]:
 
 
 @router.post("/get_scenario")
-def get_scenario(room: RoomName):
+def get_scenario(room: RoomName, db: Session = Depends(get_db)):
     ids = _parse_ids_from_room(room.room)
     if not ids:
         return {"scenario": None}
 
     candidate_id, vacancy_id = ids
+    vacancy_title = db.query(Vacancy).filter(Vacancy.id == vacancy_id).first()
     scenario = _load_scenario(candidate_id, vacancy_id)
-    return {"scenario": scenario if scenario is not None else None}
+    return {"vacancy": str(vacancy_title.title), "scenario": scenario if scenario is not None else None}
