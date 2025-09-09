@@ -4,7 +4,7 @@
 from fastapi import FastAPI, Request
 import json
 from fastapi.middleware.cors import CORSMiddleware
-from api.routers import crud, download, schedule, scenario, interview_report
+from api.routers import crud, download, scenario, interview_report
 # ================= JWT middleware =================
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
@@ -81,6 +81,5 @@ async def jwt_auth_middleware(request: Request, call_next):
 # app.include_router(upload.router)
 app.include_router(crud.router)
 app.include_router(download.router)
-app.include_router(schedule.router)
 app.include_router(scenario.router)
 app.include_router(interview_report.router)

@@ -260,6 +260,7 @@ async def add_candidate(
             new_candidate = Candidate(
                 full_name=full_name,
                 vacancy_id=vacancy.id,
+                call_status="planed",
                 resume_filename=str(link_to_cv),
                 resume_size=Path(link_to_cv).stat().st_size if Path(link_to_cv).exists() else 0,
                 resume_analysis=ResumeAnalysisStatus.suitable if is_suitable else ResumeAnalysisStatus.not_suitable,

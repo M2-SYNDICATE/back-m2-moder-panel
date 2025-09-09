@@ -76,6 +76,7 @@ def get_interview_report(room_name: str, report: dict, db: Session = Depends(get
     candidate_id_str, vacancy_id_str = ids
     vacancy = db.query(Vacancy).filter(Vacancy.id == int(vacancy_id_str)).first()
 
+
     # подгружаем сценарий
     scenario_payload = _load_scenario(candidate_id_str, vacancy_id_str)
     if scenario_payload is None:
@@ -119,6 +120,7 @@ def get_interview_report(room_name: str, report: dict, db: Session = Depends(get
         raise HTTPException(status_code=404, detail="Candidate not found")
     print(merged_report)
     candidate.ai_report = json.dumps(merged_report, ensure_ascii=False)
+    candidate.call_status = "completed"
     db.add(candidate)
     db.commit()
     db.refresh(candidate)

@@ -34,7 +34,7 @@ def _generate_final_summary(feedbacks: List[str], vacancy_name: str, client: Ope
 """
     try:
         response = client.chat.completions.create(
-            model="deepseek/deepseek-chat-v3.1:free",
+            model="deepseek/deepseek-r1-0528:free",
             messages=[{"role": "system", "content": system_prompt}],
             temperature=0.2
             )
