@@ -56,6 +56,8 @@ class Candidate(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     vacancy = relationship("Vacancy", back_populates="candidates")
     email = Column(String, nullable=True)
+    total_score = Column(String, nullable=True)
+    question_group_score = Column(String, nullable=True)
 
 # Создание таблиц
 Base.metadata.create_all(bind=engine)

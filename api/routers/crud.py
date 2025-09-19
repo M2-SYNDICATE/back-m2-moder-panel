@@ -157,7 +157,8 @@ def get_candidates(db: Session = Depends(get_db)):
     candidates = db.query(Candidate).all()
     return [CandidateListResponse(
         id=c.id, fullName=c.full_name, vacancyId=c.vacancy_id,
-        resumeAnalysis=c.resume_analysis, callStatus=c.call_status, callDate=c.call_date, callLink=c.call_link
+        resumeAnalysis=c.resume_analysis, callStatus=c.call_status,
+        callDate=c.call_date, callLink=c.call_link, totalScore=c.total_score
     ) for c in candidates]
 
 @router.get("/candidate/{candidate_id}", response_model=CandidateDetailResponse)  # _КАНДИДАТ_ GET
@@ -181,8 +182,10 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db)):
         id=candidate.id, title=candidate.full_name, vacancy=vacancy.title if vacancy else None,
         callDate=candidate.call_date, callLink=candidate.call_link,
         comments=candidate.ai_comments, resume=resume_dict,
-        resumeAnalysis=candidate.resume_analysis, callStatus=candidate.call_status,
-        createdAt=candidate.created_at, ai_report=candidate.ai_report, phone=candidate.email
+        resumeAnalysis=candidate.resume_analysis,
+        callStatus=candidate.call_status, createdAt=candidate.created_at,
+        ai_report=candidate.ai_report, phone=candidate.email,
+        totalScore=candidate.total_score, groupScore=candidate.question_group_score
     )
 
 @router.post("/vacancy")  # _СОЗДАТЬ ВАКАНСИЮ_ POST

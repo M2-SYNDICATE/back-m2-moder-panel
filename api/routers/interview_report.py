@@ -8,6 +8,7 @@ from api.scripts.report_analize import analyze_interview_data
 from rich import print
 import concurrent.futures
 from api.db_models import Candidate, Vacancy, get_db
+import math
 
 router = APIRouter(tags=["report"])
 
@@ -16,6 +17,47 @@ TIMEOUT_SECONDS = 180  # 3 минуты
 MAX_RETRIES = 3
 
 # ---------- helpers ----------
+def _report_score_processing(report: dict):
+    detailed_report = report.get("detailed_report", [])
+    scores_by_category_raw = {}
+
+    # Собираем баллы по категориям
+    for item in detailed_report:
+        category = item["category"]
+        score = item["evaluation"]["score"]
+        if category not in scores_by_category_raw:
+            scores_by_category_raw[category] = []
+        scores_by_category_raw[category].append(score)
+
+    # Считаем суммы по категориям
+    category_totals = {cat: sum(scores) for cat, scores in scores_by_category_raw.items()}
+
+    # Получаем список уникальных категорий в порядке их появления
+    ordered_categories = list(dict.fromkeys(item["category"] for item in detailed_report))
+
+    # Считаем максимальные баллы по каждой категории (по 10 за каждый вопрос)
+    max_scores_by_category = {}
+    for item in detailed_report:
+        category = item["category"]
+        if category not in max_scores_by_category:
+            max_scores_by_category[category] = 0
+        max_scores_by_category[category] += 10  # каждый вопрос оценивается до 10
+
+    # Переводим баллы в 10-балльную шкалу по каждой категории и округляем вниз
+    scores_by_category_10 = []
+    for cat in ordered_categories:
+        total = category_totals.get(cat, 0)
+        max_total = max_scores_by_category.get(cat, 1)  # избегаем деления на 0
+        score_10 = (total / max_total) * 10 if max_total > 0 else 0
+        scores_by_category_10.append(math.floor(score_10))
+
+    # Общий скор: сумма всех баллов / максимальный возможный * 10
+    total_gained = sum(category_totals.values())
+    total_possible = sum(max_scores_by_category.values())
+    total_score_10 = (total_gained / total_possible) * 10 if total_possible > 0 else 0
+    total_score_10 = math.floor(total_score_10)
+
+    return total_score_10, scores_by_category_10
 
 def _call_with_timeout(func, *args, timeout: int = TIMEOUT_SECONDS):
     """Вызывает sync-функцию с таймаутом через отдельный поток."""
@@ -119,8 +161,11 @@ def get_interview_report(room_name: str, report: dict, db: Session = Depends(get
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
     print(merged_report)
+    total_score, group_score_list = _report_score_processing(report)
     candidate.ai_report = json.dumps(merged_report, ensure_ascii=False)
     candidate.call_status = "completed"
+    candidate.total_score = str(total_score)
+    candidate.question_group_score = json.dumps(group_score_list)
     db.add(candidate)
     db.commit()
     db.refresh(candidate)

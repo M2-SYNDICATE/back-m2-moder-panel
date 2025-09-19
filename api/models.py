@@ -110,6 +110,7 @@ class CandidateListResponse(BaseModel):
     callStatus: CallStatus
     callDate: Optional[datetime]
     callLink: Optional[str]
+    totalScore: Optional[str]
 
 # Для _КАНДИДАТ_ GET
 class CandidateDetailResponse(BaseModel):
@@ -125,6 +126,8 @@ class CandidateDetailResponse(BaseModel):
     createdAt: datetime
     ai_report: Optional[str]  # Отчет от ИИ
     phone: Optional[str]
+    totalScore: Optional[str]
+    groupScore: Optional[str]
 
 # Для _СОЗДАТЬ ВАКАНСИЮ_ POST
 # (Файл загружается отдельно через UploadFile)
